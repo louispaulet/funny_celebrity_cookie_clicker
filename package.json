@@ -1,0 +1,27 @@
+{
+  "name": "funny-celebrity-cookie-clicker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A Phaser-powered React clicker game about fictional celebrity private-jet satire.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "deploy": "npm run build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "gh-pages": "^6.3.0",
+    "tailwindcss": "^4.0.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.0.0"
+  }
+}
