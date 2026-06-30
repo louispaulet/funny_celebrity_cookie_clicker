@@ -37,6 +37,8 @@ export function createJetlagScene({ actions, getData }) {
         shop: 0
       };
       this.shopTab = "emitters";
+      this.cookieBaseScale = 1;
+      this.cookieTween = null;
     }
 
     create() {
@@ -238,6 +240,9 @@ export function createJetlagScene({ actions, getData }) {
         return;
       }
       const scale = Phaser.Math.Clamp(Math.min(rect.width, rect.height) / 430, 0.48, 1.02);
+      this.cookieBaseScale = scale;
+      this.cookieTween?.stop();
+      this.cookieTween = null;
       this.cookie.setScale(scale);
       this.cookie.setPosition(rect.x + rect.width * 0.5, rect.y + rect.height * 0.58);
       this.clickZone.setPosition(this.cookie.x, this.cookie.y);
@@ -422,7 +427,7 @@ export function createJetlagScene({ actions, getData }) {
       const contentBottom = rect.y + rect.height - 12;
       const viewportHeight = contentBottom - contentTop;
       const items = this.shopTab === "emitters" ? this.dataSnapshot.emitters : this.dataSnapshot.upgrades;
-      const rowHeight = this.layoutRects.mode === "wide" ? 112 : 96;
+      const rowHeight = this.layoutRects.mode === "wide" ? 112 : 108;
       const contentHeight = Math.max(viewportHeight, items.length * rowHeight + 8);
 
       this.drawPanel(rect, "Hangar Shop");
@@ -502,7 +507,7 @@ export function createJetlagScene({ actions, getData }) {
         maxChars: Math.max(15, Math.floor(width / 12)),
         parent
       });
-      this.makeButton(x + width - 82, y + height - 34, 70, 26, "Buy", item.canBuy, () => {
+      this.makeButton(x + width - 90, y + height - 40, 78, 32, "Buy", item.canBuy, () => {
         if (this.shopTab === "emitters") {
           actions.buyEmitter(item.id);
         } else {
@@ -577,11 +582,16 @@ export function createJetlagScene({ actions, getData }) {
           fontStyle: "900"
         })
         .setOrigin(0.5);
-      container.add([bg, text]);
+      const hitTarget = this.add.rectangle(0, 0, width, height, 0xffffff, 0).setOrigin(0);
+      container.add([bg, text, hitTarget]);
       container.setSize(width, height);
-      container.setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains);
       if (enabled) {
-        container.on("pointerdown", (pointer, localX, localY, event) => {
+        hitTarget.setInteractive({
+          cursor: "pointer",
+          hitArea: new Phaser.Geom.Rectangle(0, 0, width, height),
+          hitAreaCallback: Phaser.Geom.Rectangle.Contains
+        });
+        hitTarget.on("pointerdown", (pointer, localX, localY, event) => {
           event.stopPropagation();
           callback();
         });
@@ -631,13 +641,20 @@ export function createJetlagScene({ actions, getData }) {
       const x = pointer?.x || this.cookie.x;
       const y = pointer?.y || this.cookie.y;
       this.spawnPuffs(x, y, result.label);
-      this.tweens.add({
+      const baseScale = this.cookieBaseScale || 1;
+      this.cookieTween?.stop();
+      this.cookie.setScale(baseScale);
+      this.cookieTween = this.tweens.add({
         targets: this.cookie,
-        scaleX: this.cookie.scaleX * 0.92,
-        scaleY: this.cookie.scaleY * 0.92,
+        scaleX: baseScale * 0.92,
+        scaleY: baseScale * 0.92,
         duration: 55,
         yoyo: true,
-        ease: "Sine.easeOut"
+        ease: "Sine.easeOut",
+        onComplete: () => {
+          this.cookie.setScale(baseScale);
+          this.cookieTween = null;
+        }
       });
     }
 

@@ -21,6 +21,16 @@ export default function GameCanvas({ actions, data }) {
       return undefined;
     }
 
+    const container = containerRef.current;
+    const getContainerSize = () => {
+      const rect = container.getBoundingClientRect();
+      return {
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height))
+      };
+    };
+    const initialSize = getContainerSize();
+
     const Scene = createJetlagScene({
       getData: () => dataRef.current,
       actions: {
@@ -34,13 +44,14 @@ export default function GameCanvas({ actions, data }) {
 
     gameRef.current = new Phaser.Game({
       type: Phaser.AUTO,
-      parent: containerRef.current,
+      parent: container,
       backgroundColor: "#cffafe",
       scale: {
-        mode: Phaser.Scale.RESIZE,
-        parent: containerRef.current,
-        width: "100%",
-        height: "100%"
+        mode: Phaser.Scale.NONE,
+        parent: container,
+        width: initialSize.width,
+        height: initialSize.height,
+        autoRound: true
       },
       render: {
         antialias: true,
@@ -50,7 +61,23 @@ export default function GameCanvas({ actions, data }) {
       transparent: false
     });
 
+    const resizeGame = () => {
+      const game = gameRef.current;
+      if (!game) {
+        return;
+      }
+      const nextSize = getContainerSize();
+      if (nextSize.width !== game.scale.width || nextSize.height !== game.scale.height) {
+        game.scale.resize(nextSize.width, nextSize.height);
+      }
+    };
+    const resizeObserver = new ResizeObserver(resizeGame);
+    resizeObserver.observe(container);
+    const resizeFrame = requestAnimationFrame(resizeGame);
+
     return () => {
+      cancelAnimationFrame(resizeFrame);
+      resizeObserver.disconnect();
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
