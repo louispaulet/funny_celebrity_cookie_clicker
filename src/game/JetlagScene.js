@@ -435,7 +435,7 @@ export function createJetlagScene({ actions, getData }) {
       const content = this.createClipContainer(rect, contentTop, viewportHeight);
       let y = contentTop - this.scroll.shop;
       items.forEach((item) => {
-        if (y >= contentTop && y + rowHeight <= contentBottom) {
+        if (y < contentBottom && y + rowHeight > contentTop) {
           this.drawShopCard(rect.x + 14, y, rect.width - 28, rowHeight - 8, item, content);
         }
         y += rowHeight;

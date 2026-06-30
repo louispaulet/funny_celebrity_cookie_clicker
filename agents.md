@@ -7,3 +7,4 @@
 - Use fictionalized or clearly labeled public-estimate benchmarks for parody targets.
 - Preserve the lightweight local workflow: opening `index.html` in a browser should be enough to play.
 - After JavaScript changes, run `node --check app.js` before handing off.
+- After making a change, always commit and push it, even when working on the main branch.
