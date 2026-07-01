@@ -36,10 +36,10 @@ const assetRoot = `${import.meta.env?.BASE_URL || "/"}assets/game/`;
 const gameAssets = {
   backdrop: `${assetRoot}stage-backdrop.png`,
   cookie: `${assetRoot}carbon-cookie.png`,
-  goodsIcons: `${assetRoot}generated/goods-icons.png`,
-  hangarMarket: `${assetRoot}generated/hangar-market-bg.png`,
+  goodsIcons: `${assetRoot}generated/goods-icons.webp`,
+  hangarMarket: `${assetRoot}generated/hangar-market-bg.webp`,
   jet: `${assetRoot}private-jet.png`,
-  prFirm: `${assetRoot}generated/pr-firm-bg.png`
+  prFirm: `${assetRoot}generated/pr-firm-bg.webp`
 };
 
 export function createJetlagScene({ actions, getData }) {
@@ -63,9 +63,17 @@ export function createJetlagScene({ actions, getData }) {
       this.rightTab = "market";
       this.cookieBaseScale = 1;
       this.cookieTween = null;
-      this.lastUiRenderAt = 0;
-      this.pendingUiRender = false;
-      this.uiRenderInterval = 250;
+      this.currentLayer = null;
+      this.dynamicBars = {};
+      this.dynamicTexts = {};
+      this.hasRenderedUi = false;
+      this.panelSignatures = {
+        left: "",
+        right: ""
+      };
+      this.scrollViews = {};
+      this.scrollbars = {};
+      this.uiSignature = "";
     }
 
     preload() {
@@ -75,8 +83,8 @@ export function createJetlagScene({ actions, getData }) {
       this.load.image("hangar-market-bg", gameAssets.hangarMarket);
       this.load.image("pr-firm-bg", gameAssets.prFirm);
       this.load.spritesheet("goods-icons", gameAssets.goodsIcons, {
-        frameHeight: 443,
-        frameWidth: 443
+        frameHeight: 128,
+        frameWidth: 128
       });
     }
 
@@ -89,6 +97,10 @@ export function createJetlagScene({ actions, getData }) {
       this.cookie = this.add.container();
       this.effectsLayer = this.add.container();
       this.uiLayer = this.add.container();
+      this.stageUiLayer = this.add.container();
+      this.leftUiLayer = this.add.container();
+      this.rightUiLayer = this.add.container();
+      this.uiLayer.add([this.stageUiLayer, this.leftUiLayer, this.rightUiLayer]);
 
       this.createCookie();
       this.buildClouds();
@@ -163,7 +175,27 @@ export function createJetlagScene({ actions, getData }) {
         return;
       }
       this.dataSnapshot = data;
-      this.renderUi();
+      if (!this.hasRenderedUi || !this.layoutRects.stage) {
+        this.renderUi(true);
+        return;
+      }
+
+      let panelRefreshed = false;
+      const nextLeftSignature = this.getPanelSignature("left");
+      const nextRightSignature = this.getPanelSignature("right");
+      if (nextLeftSignature !== this.panelSignatures.left) {
+        this.renderPanel("left");
+        panelRefreshed = true;
+      }
+      if (nextRightSignature !== this.panelSignatures.right) {
+        this.renderPanel("right");
+        panelRefreshed = true;
+      }
+      if (panelRefreshed) {
+        this.uiSignature = this.getUiSignature();
+      }
+
+      this.updateDynamicUi();
     }
 
     layout() {
@@ -318,21 +350,153 @@ export function createJetlagScene({ actions, getData }) {
         return;
       }
 
-      const now = this.time?.now || 0;
-      if (!force && this.lastUiRenderAt > 0 && now - this.lastUiRenderAt < this.uiRenderInterval) {
-        this.pendingUiRender = true;
+      if (!force && this.getUiSignature() === this.uiSignature) {
+        this.updateDynamicUi();
         return;
       }
 
-      this.pendingUiRender = false;
-      this.lastUiRenderAt = now;
-      this.uiLayer.removeAll(true);
+      this.dynamicBars = {};
+      this.dynamicTexts = {};
+      this.scrollViews = {};
+      this.scrollbars = {};
+      this.stageUiLayer.removeAll(true);
+      this.leftUiLayer.removeAll(true);
+      this.rightUiLayer.removeAll(true);
       this.stagePanel.clear();
+      this.currentPanel = "stage";
+      this.currentLayer = this.stageUiLayer;
       this.drawStagePanel();
-      this.drawLeftDock();
-      this.drawRightDock();
+      this.currentPanel = null;
+      this.renderPanel("left");
+      this.renderPanel("right");
       this.clampScroll("left");
       this.clampScroll("right");
+      this.currentLayer = null;
+      this.hasRenderedUi = true;
+      this.uiSignature = this.getUiSignature();
+    }
+
+    renderPanel(key) {
+      if (!this.dataSnapshot) {
+        return;
+      }
+
+      this.clearDynamicRefsForPanel(key);
+      delete this.scrollViews[key];
+      delete this.scrollbars[key];
+      if (key === "left") {
+        this.leftUiLayer.removeAll(true);
+        this.currentPanel = "left";
+        this.currentLayer = this.leftUiLayer;
+        this.drawLeftDock();
+      } else if (key === "right") {
+        this.rightUiLayer.removeAll(true);
+        this.currentPanel = "right";
+        this.currentLayer = this.rightUiLayer;
+        this.drawRightDock();
+      }
+      this.currentPanel = null;
+      this.currentLayer = null;
+      this.panelSignatures[key] = this.getPanelSignature(key);
+    }
+
+    getUiSignature() {
+      if (!this.dataSnapshot) {
+        return "";
+      }
+      return [this.getPanelSignature("left"), this.getPanelSignature("right")].join("::");
+    }
+
+    getPanelSignature(key) {
+      if (!this.dataSnapshot) {
+        return "";
+      }
+
+      if (key === "left") {
+        const achievements = this.dataSnapshot.achievements
+          .filter((achievement) => achievement.earned)
+          .map((achievement) => achievement.id)
+          .join("|");
+        return [
+          this.layoutRects.mode,
+          this.leftCollapsed,
+          this.compactPanel,
+          this.dataSnapshot.canPrestige,
+          this.dataSnapshot.moralCredits,
+          this.dataSnapshot.log.join("|"),
+          achievements
+        ].join("::");
+      }
+
+      const emitters = this.dataSnapshot.emitters
+        .map((item) => `${item.id}:${item.owned}:${item.canBuy}:${item.price}`)
+        .join("|");
+      const upgrades = this.dataSnapshot.upgrades
+        .map((item) => `${item.id}:${item.approved}:${item.canBuy}:${item.price}`)
+        .join("|");
+      return [
+        this.layoutRects.mode,
+        this.rightCollapsed,
+        this.compactPanel,
+        this.rightTab,
+        emitters,
+        upgrades
+      ].join("::");
+    }
+
+    updateDynamicUi() {
+      if (!this.hasRenderedUi || !this.dataSnapshot) {
+        return;
+      }
+
+      this.setDynamicText("privacyStatus", this.dataSnapshot.privacyStatus);
+      this.setDynamicText("balanceValue", this.dataSnapshot.balance.value);
+      this.setDynamicText("balanceStatus", this.dataSnapshot.balance.status);
+      (this.dataSnapshot.metrics || []).forEach((metric) => {
+        this.setDynamicText(`metric:${metric.label}`, metric.value);
+      });
+      this.updateProgress("benchmark", this.dataSnapshot.progress, "Benchmark");
+      this.updateProgress("guilt", this.dataSnapshot.guilt, `Guilt: ${this.dataSnapshot.guiltLabel}`);
+    }
+
+    setDynamicText(key, value) {
+      const ref = this.dynamicTexts[key];
+      if (!ref?.node?.active) {
+        return;
+      }
+      const nextText = truncate(value, ref.maxChars);
+      if (ref.node.text !== nextText) {
+        ref.node.setText(nextText);
+      }
+    }
+
+    updateProgress(key, value, label) {
+      const ref = this.dynamicBars[key];
+      if (!ref?.fill?.active) {
+        return;
+      }
+      this.setDynamicText(`${key}:label`, label);
+      this.setDynamicText(`${key}:percent`, `${formatPercent(value)}%`);
+      const nextWidth = Math.round(Math.max(8, (ref.width * Math.min(100, value)) / 100));
+      if (ref.lastWidth !== nextWidth) {
+        ref.fill.clear();
+        ref.fill.fillGradientStyle(ref.startColor, ref.endColor, ref.startColor, ref.endColor, 1);
+        ref.fill.fillRoundedRect(ref.x, ref.y, nextWidth, ref.height, ref.radius);
+        ref.lastWidth = nextWidth;
+      }
+    }
+
+    clearDynamicRefsForPanel(panel) {
+      Object.entries(this.dynamicTexts).forEach(([key, ref]) => {
+        if (ref.panel === panel) {
+          delete this.dynamicTexts[key];
+        }
+      });
+      Object.entries(this.dynamicBars).forEach(([key, ref]) => {
+        if (ref.panel === panel) {
+          delete this.dynamicBars[key];
+        }
+      });
     }
 
     drawStagePanel() {
@@ -391,12 +555,12 @@ export function createJetlagScene({ actions, getData }) {
         return;
       }
       this.drawRailShell(rect, active);
-      this.drawLogoBadge(rect.x + 7, rect.y + 10, Math.min(34, rect.width - 14), this.uiLayer);
+      this.drawLogoBadge(rect.x + 7, rect.y + 10, Math.min(34, rect.width - 14));
       this.makeButton(rect.x + 6, rect.y + 56, rect.width - 12, 34, rect.width < 50 ? "JB" : "Stats", true, () => {
         this.leftCollapsed = false;
         this.compactPanel = "left";
         this.layout();
-      }, active, this.uiLayer);
+      }, active);
       this.addUiText("Desk", rect.x + rect.width / 2, rect.y + rect.height - 22, 10, active ? textColor.ink : textColor.white, {
         align: "center",
         fontStyle: "900",
@@ -414,13 +578,13 @@ export function createJetlagScene({ actions, getData }) {
         this.rightCollapsed = false;
         this.compactPanel = "right";
         this.layout();
-      }, active && this.rightTab === "market", this.uiLayer);
+      }, active && this.rightTab === "market");
       this.makeButton(rect.x + 6, rect.y + 54, rect.width - 12, 34, "PR", true, () => {
         this.rightTab = "pr";
         this.rightCollapsed = false;
         this.compactPanel = "right";
         this.layout();
-      }, active && this.rightTab === "pr", this.uiLayer);
+      }, active && this.rightTab === "pr");
       this.addUiText("Dock", rect.x + rect.width / 2, rect.y + rect.height - 22, 10, active ? textColor.ink : textColor.white, {
         align: "center",
         fontStyle: "900",
@@ -434,7 +598,7 @@ export function createJetlagScene({ actions, getData }) {
       rail.lineStyle(1, active ? colors.line : 0xffffff, active ? 0.88 : 0.2);
       rail.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
       rail.strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
-      this.uiLayer.add(rail);
+      this.currentLayer.add(rail);
     }
 
     drawStatsDesk(rect) {
@@ -445,7 +609,7 @@ export function createJetlagScene({ actions, getData }) {
       const contentTop = rect.y + headerHeight;
       const contentBottom = rect.y + rect.height - 12;
       const viewportHeight = Math.max(1, contentBottom - contentTop);
-      let y = contentTop - this.scroll.left;
+      let y = contentTop;
 
       this.drawPanelShell(rect, {
         title: "",
@@ -455,7 +619,7 @@ export function createJetlagScene({ actions, getData }) {
       });
       this.drawStatsHeader(rect);
 
-      const content = this.createClipContainer(rect, contentTop, viewportHeight);
+      const content = this.createClipContainer(rect, contentTop, viewportHeight, "left");
       y = this.drawBalanceCard(content, rect, y);
       y = this.drawMetrics(content, rect, y);
       y = this.drawBenchmarkBars(content, rect, y);
@@ -464,13 +628,15 @@ export function createJetlagScene({ actions, getData }) {
       y = this.drawCampaignLog(content, rect, y);
       y = this.drawAchievements(content, rect, y);
 
-      const contentHeight = y - contentTop + this.scroll.left;
+      const contentHeight = Math.max(viewportHeight, y - contentTop);
       this.scrollMax.left = Math.max(0, contentHeight - viewportHeight);
+      this.clampScroll("left");
+      this.updateScrollPosition("left");
       this.drawScrollbar("left", rect, contentTop, viewportHeight, contentHeight, colors.teal);
     }
 
     drawStatsHeader(rect) {
-      this.drawLogoBadge(rect.x + 14, rect.y + 18, 38, this.uiLayer);
+      this.drawLogoBadge(rect.x + 14, rect.y + 18, 38);
       this.addUiText(this.dataSnapshot.brand?.name || "Jetlag Billionaire", rect.x + 62, rect.y + 18, 15, textColor.white, {
         fontStyle: "900",
         maxChars: Math.max(18, Math.floor((rect.width - 122) / 8))
@@ -481,12 +647,13 @@ export function createJetlagScene({ actions, getData }) {
       });
       this.addUiText(this.dataSnapshot.privacyStatus, rect.x + 14, rect.y + 68, 10, textColor.muted, {
         fontStyle: "900",
+        key: "privacyStatus",
         maxChars: Math.max(24, Math.floor((rect.width - 84) / 7))
       });
       this.makeButton(rect.x + rect.width - 58, rect.y + 18, 42, 30, "<<", true, () => {
         this.leftCollapsed = true;
         this.layout();
-      }, false, this.uiLayer);
+      }, false);
     }
 
     drawBalanceCard(parent, rect, y) {
@@ -505,11 +672,13 @@ export function createJetlagScene({ actions, getData }) {
       });
       this.addUiText(this.dataSnapshot.balance.value, x + 14, y + 32, rect.width < 300 ? 20 : 24, textColor.white, {
         fontStyle: "900",
+        key: "balanceValue",
         maxChars: Math.max(14, Math.floor(width / 10)),
         parent
       });
       this.addUiText(this.dataSnapshot.balance.status, x + 14, y + 62, 10, "#cbd5e1", {
         fontStyle: "900",
+        key: "balanceStatus",
         maxChars: Math.max(22, Math.floor(width / 7)),
         parent
       });
@@ -536,6 +705,7 @@ export function createJetlagScene({ actions, getData }) {
         });
         this.addUiText(metric.value, x + 10, cardY + 29, 13, textColor.ink, {
           fontStyle: "900",
+          key: `metric:${metric.label}`,
           maxChars: Math.max(10, Math.floor(cardWidth / 8)),
           parent
         });
@@ -555,8 +725,8 @@ export function createJetlagScene({ actions, getData }) {
         parent
       });
       y += 54;
-      this.drawProgress(parent, rect.x + 14, y, rect.width - 28, "Benchmark", this.dataSnapshot.progress, colors.teal, colors.emerald);
-      this.drawProgress(parent, rect.x + 14, y + 42, rect.width - 28, `Guilt: ${this.dataSnapshot.guiltLabel}`, this.dataSnapshot.guilt, colors.amber, colors.rose);
+      this.drawProgress(parent, rect.x + 14, y, rect.width - 28, "Benchmark", this.dataSnapshot.progress, colors.teal, colors.emerald, "benchmark");
+      this.drawProgress(parent, rect.x + 14, y + 42, rect.width - 28, `Guilt: ${this.dataSnapshot.guiltLabel}`, this.dataSnapshot.guilt, colors.amber, colors.rose, "guilt");
       return y + 88;
     }
 
@@ -659,12 +829,10 @@ export function createJetlagScene({ actions, getData }) {
       });
       this.drawCommerceHeader(rect);
 
-      const content = this.createClipContainer(rect, contentTop, viewportHeight);
-      let y = contentTop - this.scroll.right;
+      const content = this.createClipContainer(rect, contentTop, viewportHeight, "right");
+      let y = contentTop;
       items.forEach((item) => {
-        if (y < contentBottom && y + rowHeight > contentTop) {
-          this.drawCommerceCard(rect.x + 14, y, rect.width - 28, rowHeight - 8, item, content);
-        }
+        this.drawCommerceCard(rect.x + 14, y, rect.width - 28, rowHeight - 8, item, content);
         y += rowHeight;
       });
 
@@ -677,6 +845,8 @@ export function createJetlagScene({ actions, getData }) {
       }
 
       this.scrollMax.right = Math.max(0, contentHeight - viewportHeight);
+      this.clampScroll("right");
+      this.updateScrollPosition("right");
       this.drawScrollbar("right", rect, contentTop, viewportHeight, contentHeight, this.rightTab === "market" ? colors.amber : colors.rose);
     }
 
@@ -684,7 +854,7 @@ export function createJetlagScene({ actions, getData }) {
       this.makeButton(rect.x + rect.width - 58, rect.y + 18, 42, 30, ">>", true, () => {
         this.rightCollapsed = true;
         this.layout();
-      }, false, this.uiLayer);
+      }, false);
 
       const tabY = rect.y + 62;
       const tabWidth = (rect.width - 36) / 2;
@@ -692,12 +862,12 @@ export function createJetlagScene({ actions, getData }) {
         this.rightTab = "market";
         this.scroll.right = 0;
         this.renderUi(true);
-      }, this.rightTab === "market", this.uiLayer);
+      }, this.rightTab === "market");
       this.makeButton(rect.x + 22 + tabWidth, tabY, tabWidth, 32, "PR Firm", true, () => {
         this.rightTab = "pr";
         this.scroll.right = 0;
         this.renderUi(true);
-      }, this.rightTab === "pr", this.uiLayer);
+      }, this.rightTab === "pr");
     }
 
     drawCommerceCard(x, y, width, height, item, parent) {
@@ -777,7 +947,7 @@ export function createJetlagScene({ actions, getData }) {
       shell.fillStyle(color, 0.92);
       shell.fillRoundedRect(rect.x + 8, rect.y + 8, rect.width - 16, 44, 10);
       shell.fillRect(rect.x + 8, rect.y + 30, rect.width - 16, 22);
-      this.uiLayer.add(shell);
+      this.currentLayer.add(shell);
 
       if (eyebrow) {
         this.addUiText(eyebrow, rect.x + 20, rect.y + 15, 10, "#e2e8f0", {
@@ -811,7 +981,7 @@ export function createJetlagScene({ actions, getData }) {
         .setAlpha(0.92)
         .setCrop((image.width - cropWidth) / 2, (image.height - cropHeight) / 2, cropWidth, cropHeight)
         .setScale(rect.width / cropWidth, rect.height / cropHeight);
-      this.uiLayer.add(bg);
+      this.currentLayer.add(bg);
     }
 
     drawGoodsIcon(parent, x, y, size, frame, enabled) {
@@ -846,7 +1016,7 @@ export function createJetlagScene({ actions, getData }) {
       });
     }
 
-    drawLogoBadge(x, y, size, parent) {
+    drawLogoBadge(x, y, size, parent = this.currentLayer) {
       const badge = this.add.graphics();
       badge.fillStyle(colors.ink, 1);
       badge.fillRoundedRect(x, y, size, size, 8);
@@ -876,24 +1046,42 @@ export function createJetlagScene({ actions, getData }) {
       });
     }
 
-    drawProgress(parent, x, y, width, label, value, startColor, endColor) {
+    drawProgress(parent, x, y, width, label, value, startColor, endColor, key) {
       this.addUiText(label, x, y, 10, textColor.muted, {
         fontStyle: "900",
+        key: `${key}:label`,
         maxChars: Math.floor(width / 8),
         parent
       });
       this.addUiText(`${formatPercent(value)}%`, x + width, y, 10, textColor.ink, {
         align: "right",
         fontStyle: "900",
+        key: `${key}:percent`,
         originX: 1,
         parent
       });
-      const bg = this.add.graphics();
-      bg.fillStyle(0xe2e8f0, 1);
-      bg.fillRoundedRect(x, y + 18, width, 10, 5);
-      bg.fillGradientStyle(startColor, endColor, startColor, endColor, 1);
-      bg.fillRoundedRect(x, y + 18, Math.max(8, (width * Math.min(100, value)) / 100), 10, 5);
-      parent.add(bg);
+      const track = this.add.graphics();
+      track.fillStyle(0xe2e8f0, 1);
+      track.fillRoundedRect(x, y + 18, width, 10, 5);
+      parent.add(track);
+
+      const fill = this.add.graphics();
+      fill.fillGradientStyle(startColor, endColor, startColor, endColor, 1);
+      fill.fillRoundedRect(x, y + 18, Math.max(8, (width * Math.min(100, value)) / 100), 10, 5);
+      parent.add(fill);
+      const initialWidth = Math.round(Math.max(8, (width * Math.min(100, value)) / 100));
+      this.dynamicBars[key] = {
+        endColor,
+        fill,
+        height: 10,
+        lastWidth: initialWidth,
+        panel: this.currentPanel,
+        radius: 5,
+        startColor,
+        width,
+        x,
+        y: y + 18
+      };
     }
 
     drawScrollbar(key, rect, y, height, contentHeight, color) {
@@ -907,12 +1095,22 @@ export function createJetlagScene({ actions, getData }) {
       const bar = this.add.graphics();
       bar.fillStyle(0xe2e8f0, 0.86);
       bar.fillRoundedRect(x, y, 4, height, 2);
-      bar.fillStyle(color, 0.9);
-      bar.fillRoundedRect(x - 1, thumbY, 6, thumbHeight, 3);
-      this.uiLayer.add(bar);
+      const thumb = this.add.graphics();
+      thumb.fillStyle(color, 0.9);
+      thumb.fillRoundedRect(x - 1, 0, 6, thumbHeight, 3);
+      thumb.y = thumbY;
+      this.currentLayer.add(bar);
+      this.currentLayer.add(thumb);
+      this.scrollbars[key] = {
+        thumb,
+        thumbHeight,
+        trackHeight: height,
+        trackY: y
+      };
     }
 
-    makeButton(x, y, width, height, label, enabled, callback, selected = false, parent = this.uiLayer) {
+    makeButton(x, y, width, height, label, enabled, callback, selected = false, parent = null) {
+      const targetParent = parent || this.currentLayer || this.uiLayer;
       const container = this.add.container(Math.round(x), Math.round(y));
       const bg = this.add.graphics();
       const fill = selected ? colors.ink : enabled ? colors.panel : 0xe2e8f0;
@@ -944,29 +1142,35 @@ export function createJetlagScene({ actions, getData }) {
         });
       }
       container.setAlpha(enabled ? 1 : 0.5);
-      parent.add(container);
+      targetParent.add(container);
       return container;
     }
 
-    createClipContainer(rect, y, height) {
+    createClipContainer(rect, y, height, key = null) {
       const container = this.add.container();
       const maskShape = this.add.graphics();
       maskShape.fillStyle(0xffffff, 1);
       maskShape.fillRect(rect.x, y, rect.width, height);
       container.setMask(maskShape.createGeometryMask());
       maskShape.setVisible(false);
-      this.uiLayer.add(maskShape);
-      this.uiLayer.add(container);
+      this.currentLayer.add(maskShape);
+      this.currentLayer.add(container);
+      if (key) {
+        this.scrollViews[key] = {
+          container
+        };
+      }
       return container;
     }
 
-    drawCard(x, y, width, height, fillColor = colors.panel, alpha = 1, parent = this.uiLayer) {
+    drawCard(x, y, width, height, fillColor = colors.panel, alpha = 1, parent = null) {
+      const targetParent = parent || this.currentLayer || this.uiLayer;
       const card = this.add.graphics();
       card.fillStyle(fillColor, alpha);
       card.lineStyle(1, colors.line, 0.72);
       card.fillRoundedRect(x, y, width, height, 8);
       card.strokeRoundedRect(x, y, width, height, 8);
-      parent.add(card);
+      targetParent.add(card);
       return card;
     }
 
@@ -980,7 +1184,14 @@ export function createJetlagScene({ actions, getData }) {
         resolution: textResolution
       });
       label.setOrigin(options.originX || 0, options.originY || 0);
-      (options.parent || this.uiLayer).add(label);
+      (options.parent || this.currentLayer || this.uiLayer).add(label);
+      if (options.key) {
+        this.dynamicTexts[options.key] = {
+          maxChars: options.maxChars,
+          node: label,
+          panel: this.currentPanel
+        };
+      }
       return label;
     }
 
@@ -1045,9 +1256,8 @@ export function createJetlagScene({ actions, getData }) {
 
     handleWheel(pointer, gameObjects, deltaX, deltaY) {
       const key = this.panelAt(pointer.x, pointer.y);
-      if (key) {
-        this.scrollPanel(key, deltaY);
-        this.renderUi();
+      if (key && this.scrollPanel(key, deltaY)) {
+        this.updateScrollPosition(key);
       }
     }
 
@@ -1071,8 +1281,9 @@ export function createJetlagScene({ actions, getData }) {
       }
       const delta = this.dragScroll.lastY - pointer.y;
       this.dragScroll.lastY = pointer.y;
-      this.scrollPanel(this.dragScroll.key, delta);
-      this.renderUi();
+      if (this.scrollPanel(this.dragScroll.key, delta)) {
+        this.updateScrollPosition(this.dragScroll.key);
+      }
     }
 
     handlePointerUp() {
@@ -1090,7 +1301,24 @@ export function createJetlagScene({ actions, getData }) {
     }
 
     scrollPanel(key, delta) {
-      this.scroll[key] = Phaser.Math.Clamp(this.scroll[key] + delta, 0, this.scrollMax[key]);
+      const next = Phaser.Math.Clamp(this.scroll[key] + delta, 0, this.scrollMax[key]);
+      if (next === this.scroll[key]) {
+        return false;
+      }
+      this.scroll[key] = next;
+      return true;
+    }
+
+    updateScrollPosition(key) {
+      const view = this.scrollViews[key];
+      if (view?.container?.active) {
+        view.container.y = -this.scroll[key];
+      }
+      const bar = this.scrollbars[key];
+      if (bar?.thumb?.active) {
+        const max = this.scrollMax[key];
+        bar.thumb.y = bar.trackY + (bar.trackHeight - bar.thumbHeight) * (max === 0 ? 0 : this.scroll[key] / max);
+      }
     }
 
     clampScroll(key) {
@@ -1107,9 +1335,6 @@ export function createJetlagScene({ actions, getData }) {
       this.cookieRing.rotation += 0.006;
       this.cookieGlow.scale = 1 + Math.sin(time * 0.004) * 0.05;
       this.cloudLayer.x = Math.sin(time * 0.00018) * 18;
-      if (this.pendingUiRender && time - this.lastUiRenderAt >= this.uiRenderInterval) {
-        this.renderUi(true);
-      }
     }
 
     shutdown() {
