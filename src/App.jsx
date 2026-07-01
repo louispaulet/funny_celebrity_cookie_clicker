@@ -155,6 +155,7 @@ function buildGameData(state) {
         name: item.name,
         description: item.description,
         detail: `${formatMass(output)} / sec each`,
+        iconFrame: buyableEmitters.findIndex((entry) => entry.id === item.id),
         owned: state.emitters[item.id],
         price: formatMass(cost),
         canBuy: state.molecules >= cost

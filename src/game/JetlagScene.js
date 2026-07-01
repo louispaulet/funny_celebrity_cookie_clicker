@@ -36,7 +36,10 @@ const assetRoot = `${import.meta.env?.BASE_URL || "/"}assets/game/`;
 const gameAssets = {
   backdrop: `${assetRoot}stage-backdrop.png`,
   cookie: `${assetRoot}carbon-cookie.png`,
-  jet: `${assetRoot}private-jet.png`
+  goodsIcons: `${assetRoot}generated/goods-icons.png`,
+  hangarMarket: `${assetRoot}generated/hangar-market-bg.png`,
+  jet: `${assetRoot}private-jet.png`,
+  prFirm: `${assetRoot}generated/pr-firm-bg.png`
 };
 
 export function createJetlagScene({ actions, getData }) {
@@ -60,12 +63,21 @@ export function createJetlagScene({ actions, getData }) {
       this.rightTab = "market";
       this.cookieBaseScale = 1;
       this.cookieTween = null;
+      this.lastUiRenderAt = 0;
+      this.pendingUiRender = false;
+      this.uiRenderInterval = 250;
     }
 
     preload() {
       this.load.image("stage-backdrop", gameAssets.backdrop);
       this.load.image("private-jet", gameAssets.jet);
       this.load.image("carbon-cookie", gameAssets.cookie);
+      this.load.image("hangar-market-bg", gameAssets.hangarMarket);
+      this.load.image("pr-firm-bg", gameAssets.prFirm);
+      this.load.spritesheet("goods-icons", gameAssets.goodsIcons, {
+        frameHeight: 443,
+        frameWidth: 443
+      });
     }
 
     create() {
@@ -163,7 +175,7 @@ export function createJetlagScene({ actions, getData }) {
       this.positionStageBackdrop();
       this.drawClouds();
       this.positionStageObjects();
-      this.renderUi();
+      this.renderUi(true);
     }
 
     computeLayout(width, height) {
@@ -301,11 +313,19 @@ export function createJetlagScene({ actions, getData }) {
       this.jet.setScale(Phaser.Math.Clamp(rect.width / 760, 0.34, 0.84));
     }
 
-    renderUi() {
+    renderUi(force = false) {
       if (!this.dataSnapshot || !this.layoutRects.stage) {
         return;
       }
 
+      const now = this.time?.now || 0;
+      if (!force && this.lastUiRenderAt > 0 && now - this.lastUiRenderAt < this.uiRenderInterval) {
+        this.pendingUiRender = true;
+        return;
+      }
+
+      this.pendingUiRender = false;
+      this.lastUiRenderAt = now;
       this.uiLayer.removeAll(true);
       this.stagePanel.clear();
       this.drawStagePanel();
@@ -463,7 +483,7 @@ export function createJetlagScene({ actions, getData }) {
         fontStyle: "900",
         maxChars: Math.max(24, Math.floor((rect.width - 84) / 7))
       });
-      this.makeButton(rect.x + rect.width - 64, rect.y + 18, 48, 30, "Fold", true, () => {
+      this.makeButton(rect.x + rect.width - 58, rect.y + 18, 42, 30, "<<", true, () => {
         this.leftCollapsed = true;
         this.layout();
       }, false, this.uiLayer);
@@ -626,14 +646,16 @@ export function createJetlagScene({ actions, getData }) {
       const contentBottom = rect.y + rect.height - 12;
       const viewportHeight = Math.max(1, contentBottom - contentTop);
       const items = this.rightTab === "market" ? this.dataSnapshot.emitters : this.dataSnapshot.upgrades;
-      const rowHeight = this.rightTab === "market" ? 118 : 122;
+      const rowHeight = this.rightTab === "market" ? 132 : 128;
       const contentHeight = Math.max(viewportHeight, items.length * rowHeight + 8);
 
       this.drawPanelShell(rect, {
+        backgroundKey: this.rightTab === "market" ? "hangar-market-bg" : "pr-firm-bg",
         title: this.rightTab === "market" ? "Hangar Market" : "PR Firm",
         eyebrow: this.rightTab === "market" ? "Emitter inventory" : "Approval counter",
         color: this.rightTab === "market" ? colors.hangar : colors.rose,
-        fill: this.rightTab === "market" ? colors.panel : 0xfff7fb
+        fill: this.rightTab === "market" ? colors.panel : 0xfff7fb,
+        fillAlpha: this.rightTab === "market" ? 0.62 : 0.56
       });
       this.drawCommerceHeader(rect);
 
@@ -659,7 +681,7 @@ export function createJetlagScene({ actions, getData }) {
     }
 
     drawCommerceHeader(rect) {
-      this.makeButton(rect.x + rect.width - 64, rect.y + 18, 48, 30, "Fold", true, () => {
+      this.makeButton(rect.x + rect.width - 58, rect.y + 18, 42, 30, ">>", true, () => {
         this.rightCollapsed = true;
         this.layout();
       }, false, this.uiLayer);
@@ -669,32 +691,40 @@ export function createJetlagScene({ actions, getData }) {
       this.makeButton(rect.x + 14, tabY, tabWidth, 32, "Market", true, () => {
         this.rightTab = "market";
         this.scroll.right = 0;
-        this.renderUi();
+        this.renderUi(true);
       }, this.rightTab === "market", this.uiLayer);
       this.makeButton(rect.x + 22 + tabWidth, tabY, tabWidth, 32, "PR Firm", true, () => {
         this.rightTab = "pr";
         this.scroll.right = 0;
-        this.renderUi();
+        this.renderUi(true);
       }, this.rightTab === "pr", this.uiLayer);
     }
 
     drawCommerceCard(x, y, width, height, item, parent) {
       const approved = Boolean(item.approved);
       const available = Boolean(item.canBuy);
-      const fill = approved ? 0xecfdf5 : available ? 0xf0fdfa : colors.paper;
+      const isMarket = this.rightTab === "market";
+      const fill = isMarket ? (available ? 0xf8fffb : colors.paper) : approved ? 0xfffbeb : 0xfff7fb;
       const accent = approved ? colors.emerald : available ? colors.teal : colors.disabled;
-      this.drawCard(x, y, width, height, fill, 0.96, parent);
+      this.drawCard(x, y, width, height, fill, isMarket ? 0.92 : 0.96, parent);
 
       const stripe = this.add.graphics();
-      stripe.fillStyle(accent, available || approved ? 0.9 : 0.52);
+      stripe.fillStyle(isMarket ? accent : colors.rose, available || approved ? 0.9 : 0.52);
       stripe.fillRoundedRect(x, y, 6, height, 4);
       parent.add(stripe);
 
+      const textX = isMarket ? x + 86 : x + 18;
+      const textWidth = isMarket ? width - 110 : width - 36;
       const status = approved ? "APPROVED" : available ? "READY" : "SAVING UP";
       const statusColor = approved || available ? textColor.emerald : textColor.muted;
-      this.addUiText(item.detail, x + 16, y + 10, 10, this.rightTab === "market" ? textColor.teal : textColor.rose, {
+      if (isMarket) {
+        this.drawGoodsIcon(parent, x + 18, y + 20, 56, item.iconFrame, available);
+      } else {
+        this.drawContractPaper(parent, x + 16, y + 14, width - 32, height - 26, approved);
+      }
+      this.addUiText(item.detail, textX, y + 10, 10, isMarket ? textColor.teal : textColor.rose, {
         fontStyle: "900",
-        maxChars: Math.max(16, Math.floor(width / 11)),
+        maxChars: Math.max(16, Math.floor(textWidth / 11)),
         parent
       });
       this.addUiText(status, x + width - 12, y + 10, 10, statusColor, {
@@ -703,13 +733,13 @@ export function createJetlagScene({ actions, getData }) {
         originX: 1,
         parent
       });
-      this.addUiText(item.name, x + 16, y + 30, 14, textColor.ink, {
+      this.addUiText(item.name, textX, y + 30, 14, textColor.ink, {
         fontStyle: "900",
-        maxChars: Math.max(18, Math.floor(width / 9)),
+        maxChars: Math.max(18, Math.floor(textWidth / 9)),
         parent
       });
-      this.addUiText(item.description, x + 16, y + 52, 11, textColor.muted, {
-        maxChars: Math.max(25, Math.floor(width / 8)),
+      this.addUiText(item.description, textX, y + 52, 11, textColor.muted, {
+        maxChars: Math.max(25, Math.floor(textWidth / 8)),
         parent
       });
 
@@ -724,10 +754,10 @@ export function createJetlagScene({ actions, getData }) {
       }
 
       const priceColor = available ? textColor.teal : approved ? textColor.emerald : textColor.muted;
-      this.drawPricePill(parent, x + 16, y + height - 34, Math.min(148, width - 116), 26, item.price, priceColor);
-      const label = approved ? "Approved" : this.rightTab === "market" ? "Buy" : "Approve";
-      this.makeButton(x + width - 92, y + height - 38, 80, 32, label, available, () => {
-        if (this.rightTab === "market") {
+      this.drawPricePill(parent, textX, y + height - 36, Math.min(148, width - 118), 26, item.price, priceColor);
+      const label = approved ? "Signed" : isMarket ? "Buy" : "Sign";
+      this.makeButton(x + width - 92, y + height - 40, 80, 32, label, available, () => {
+        if (isMarket) {
           actions.buyEmitter(item.id);
         } else {
           actions.buyUpgrade(item.id);
@@ -735,9 +765,12 @@ export function createJetlagScene({ actions, getData }) {
       }, available, parent);
     }
 
-    drawPanelShell(rect, { title, eyebrow, color, fill }) {
+    drawPanelShell(rect, { backgroundKey = null, title, eyebrow, color, fill, fillAlpha = 0.9 }) {
+      if (backgroundKey) {
+        this.drawPanelBackgroundImage(rect, backgroundKey);
+      }
       const shell = this.add.graphics();
-      shell.fillStyle(fill, 0.9);
+      shell.fillStyle(fill, fillAlpha);
       shell.lineStyle(1, colors.line, 0.82);
       shell.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
       shell.strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
@@ -758,6 +791,59 @@ export function createJetlagScene({ actions, getData }) {
           maxChars: Math.max(14, Math.floor((rect.width - 98) / 9))
         });
       }
+    }
+
+    drawPanelBackgroundImage(rect, key) {
+      const image = this.textures.get(key).getSourceImage();
+      const imageRatio = image.width / image.height;
+      const rectRatio = rect.width / rect.height;
+      let cropWidth = image.width;
+      let cropHeight = image.height;
+
+      if (imageRatio > rectRatio) {
+        cropWidth = image.height * rectRatio;
+      } else {
+        cropHeight = image.width / rectRatio;
+      }
+
+      const bg = this.add
+        .image(rect.x + rect.width / 2, rect.y + rect.height / 2, key)
+        .setAlpha(0.92)
+        .setCrop((image.width - cropWidth) / 2, (image.height - cropHeight) / 2, cropWidth, cropHeight)
+        .setScale(rect.width / cropWidth, rect.height / cropHeight);
+      this.uiLayer.add(bg);
+    }
+
+    drawGoodsIcon(parent, x, y, size, frame, enabled) {
+      const plate = this.add.graphics();
+      plate.fillStyle(0xffffff, 0.86);
+      plate.lineStyle(1, colors.gold, 0.56);
+      plate.fillRoundedRect(x, y, size, size, 12);
+      plate.strokeRoundedRect(x, y, size, size, 12);
+      parent.add(plate);
+
+      const icon = this.add.image(x + size / 2, y + size / 2, "goods-icons", frame).setDisplaySize(size * 0.9, size * 0.9);
+      icon.setAlpha(enabled ? 1 : 0.58);
+      parent.add(icon);
+    }
+
+    drawContractPaper(parent, x, y, width, height, signed) {
+      const paper = this.add.graphics();
+      const stampX = Math.max(x + 132, x + width - 126);
+      paper.fillStyle(0xfffbeb, 0.68);
+      paper.lineStyle(1, signed ? colors.emerald : colors.gold, signed ? 0.55 : 0.5);
+      paper.fillRoundedRect(x, y, width, height, 8);
+      paper.strokeRoundedRect(x, y, width, height, 8);
+      paper.lineStyle(2, signed ? colors.emerald : colors.rose, signed ? 0.56 : 0.36);
+      paper.lineBetween(x + 16, y + height - 24, stampX - 34, y + height - 24);
+      paper.strokeCircle(stampX, y + height - 28, 18);
+      parent.add(paper);
+      this.addUiText(signed ? "SIGNED" : "SIGNATURE", stampX, y + height - 34, signed ? 8 : 7, signed ? textColor.emerald : textColor.rose, {
+        align: "center",
+        fontStyle: "900",
+        originX: 0.5,
+        parent
+      });
     }
 
     drawLogoBadge(x, y, size, parent) {
@@ -849,7 +935,6 @@ export function createJetlagScene({ actions, getData }) {
       container.setSize(width, height);
       if (enabled) {
         hitTarget.setInteractive({
-          cursor: "pointer",
           hitArea: new Phaser.Geom.Rectangle(0, 0, width, height),
           hitAreaCallback: Phaser.Geom.Rectangle.Contains
         });
@@ -1022,6 +1107,9 @@ export function createJetlagScene({ actions, getData }) {
       this.cookieRing.rotation += 0.006;
       this.cookieGlow.scale = 1 + Math.sin(time * 0.004) * 0.05;
       this.cloudLayer.x = Math.sin(time * 0.00018) * 18;
+      if (this.pendingUiRender && time - this.lastUiRenderAt >= this.uiRenderInterval) {
+        this.renderUi(true);
+      }
     }
 
     shutdown() {
