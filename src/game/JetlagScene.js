@@ -2,21 +2,30 @@ import Phaser from "phaser";
 
 const colors = {
   amber: 0xf59e0b,
+  cream: 0xfffbeb,
   cyan: 0xcffafe,
   disabled: 0x94a3b8,
   emerald: 0x10b981,
+  gold: 0xfbbf24,
+  hangar: 0x1f2937,
   ink: 0x0f172a,
   line: 0xcbd5e1,
   muted: 0x64748b,
   panel: 0xffffff,
+  paper: 0xf8fafc,
+  pr: 0xfce7f3,
   rose: 0xf43f5e,
-  slate: 0xf8fafc,
-  teal: 0x0f766e
+  slate: 0xf1f5f9,
+  teal: 0x0f766e,
+  tealSoft: 0xccfbf1
 };
 
 const textColor = {
+  amber: "#92400e",
+  emerald: "#047857",
   ink: "#0f172a",
   muted: "#64748b",
+  rose: "#be123c",
   teal: "#0f766e",
   white: "#ffffff"
 };
@@ -38,14 +47,17 @@ export function createJetlagScene({ actions, getData }) {
       this.dragScroll = null;
       this.layoutRects = {};
       this.scroll = {
-        command: 0,
-        shop: 0
+        left: 0,
+        right: 0
       };
       this.scrollMax = {
-        command: 0,
-        shop: 0
+        left: 0,
+        right: 0
       };
-      this.shopTab = "emitters";
+      this.leftCollapsed = false;
+      this.rightCollapsed = false;
+      this.compactPanel = "right";
+      this.rightTab = "market";
       this.cookieBaseScale = 1;
       this.cookieTween = null;
     }
@@ -155,64 +167,66 @@ export function createJetlagScene({ actions, getData }) {
     }
 
     computeLayout(width, height) {
+      const compact = width < 980;
       const margin = width < 640 ? 8 : 14;
-      const gap = width < 640 ? 8 : 12;
-      const stacked = width < 920;
-      const statsHeight = stacked ? 58 : 76;
-      const top = margin + statsHeight + gap;
-      const bottom = height - margin;
+      const gap = width < 640 ? 6 : 12;
+      const railWidth = compact ? 42 : 62;
 
-      if (stacked) {
-        const available = Math.max(420, height - top - margin);
-        const stageHeight = Phaser.Math.Clamp(Math.round(available * 0.43), 210, 340);
-        const panelHeight = Math.max(116, Math.floor((available - stageHeight - gap * 2) / 2));
+      if (compact) {
+        const minDrawerHeight = Math.min(180, Math.max(124, Math.round(height * 0.28)));
+        const maxStageHeight = Math.max(220, height - margin * 2 - gap - minDrawerHeight);
+        const stageHeight = Phaser.Math.Clamp(Math.round(height * 0.52), 220, maxStageHeight);
         const stage = {
-          x: margin,
-          y: top,
-          width: width - margin * 2,
+          x: margin + railWidth + gap,
+          y: margin,
+          width: Math.max(160, width - margin * 2 - railWidth * 2 - gap * 2),
           height: stageHeight
         };
-        const command = {
+        const drawerRect = {
           x: margin,
           y: stage.y + stage.height + gap,
-          width: stage.width,
-          height: panelHeight
+          width: width - margin * 2,
+          height: Math.max(112, height - stage.y - stage.height - gap - margin)
         };
-        const shop = {
-          x: margin,
-          y: command.y + command.height + gap,
-          width: stage.width,
-          height: Math.max(108, bottom - command.y - command.height - gap)
-        };
+        const leftActive = this.compactPanel === "left" && !this.leftCollapsed;
+        const rightActive = this.compactPanel === "right" && !this.rightCollapsed;
 
         this.layoutRects = {
-          mode: "stacked",
+          mode: "compact",
           margin,
           gap,
-          stats: { x: margin, y: margin, width: width - margin * 2, height: statsHeight },
+          railWidth,
           stage,
-          command,
-          shop
+          leftRail: { x: margin, y: stage.y, width: railWidth, height: stage.height },
+          rightRail: { x: width - margin - railWidth, y: stage.y, width: railWidth, height: stage.height },
+          leftDrawer: leftActive ? { ...drawerRect, collapsed: false } : null,
+          rightDrawer: rightActive ? { ...drawerRect, collapsed: false } : null
         };
         return;
       }
 
-      const sideWidth = Phaser.Math.Clamp(Math.round(width * 0.24), 252, 320);
-      const shopWidth = Phaser.Math.Clamp(Math.round(width * 0.29), 310, 400);
-      const panelHeight = height - top - margin;
+      const leftWidth = this.leftCollapsed ? railWidth : Phaser.Math.Clamp(Math.round(width * 0.24), 276, 346);
+      const rightWidth = this.rightCollapsed ? railWidth : Phaser.Math.Clamp(Math.round(width * 0.29), 330, 430);
+      const panelHeight = height - margin * 2;
       this.layoutRects = {
         mode: "wide",
         margin,
         gap,
-        stats: { x: margin, y: margin, width: width - margin * 2, height: statsHeight },
-        command: { x: margin, y: top, width: sideWidth, height: panelHeight },
+        railWidth,
+        leftDrawer: { x: margin, y: margin, width: leftWidth, height: panelHeight, collapsed: this.leftCollapsed },
         stage: {
-          x: margin + sideWidth + gap,
-          y: top,
-          width: width - margin * 2 - sideWidth - shopWidth - gap * 2,
+          x: margin + leftWidth + gap,
+          y: margin,
+          width: width - margin * 2 - leftWidth - rightWidth - gap * 2,
           height: panelHeight
         },
-        shop: { x: width - margin - shopWidth, y: top, width: shopWidth, height: panelHeight }
+        rightDrawer: {
+          x: width - margin - rightWidth,
+          y: margin,
+          width: rightWidth,
+          height: panelHeight,
+          collapsed: this.rightCollapsed
+        }
       };
     }
 
@@ -220,11 +234,11 @@ export function createJetlagScene({ actions, getData }) {
       this.background.clear();
       this.background.fillGradientStyle(0xcffafe, 0xdbeafe, 0xfef3c7, 0xf8fafc, 1);
       this.background.fillRect(0, 0, width, height);
-      this.background.fillStyle(0x34d399, 0.16);
-      this.background.fillCircle(width * 0.16, height * 0.88, Math.max(width, height) * 0.36);
-      this.background.fillStyle(0xf43f5e, 0.08);
-      this.background.fillCircle(width * 0.88, height * 0.18, Math.max(width, height) * 0.26);
-      this.background.lineStyle(2, 0xffffff, 0.36);
+      this.background.fillStyle(0x34d399, 0.13);
+      this.background.fillCircle(width * 0.16, height * 0.88, Math.max(width, height) * 0.34);
+      this.background.fillStyle(0xf59e0b, 0.09);
+      this.background.fillCircle(width * 0.86, height * 0.18, Math.max(width, height) * 0.28);
+      this.background.lineStyle(2, 0xffffff, 0.32);
       for (let index = 0; index < 5; index += 1) {
         const y = height * (0.18 + index * 0.14);
         this.background.lineBetween(0, y, width, y + 28);
@@ -275,16 +289,16 @@ export function createJetlagScene({ actions, getData }) {
       if (!rect) {
         return;
       }
-      const scale = Phaser.Math.Clamp(Math.min(rect.width, rect.height) / 430, 0.48, 1.02);
+      const scale = Phaser.Math.Clamp(Math.min(rect.width, rect.height) / 430, 0.42, 1.04);
       this.cookieBaseScale = scale;
       this.cookieTween?.stop();
       this.cookieTween = null;
       this.cookie.setScale(scale);
-      this.cookie.setPosition(rect.x + rect.width * 0.5, rect.y + rect.height * 0.58);
+      this.cookie.setPosition(rect.x + rect.width * 0.5, rect.y + rect.height * 0.6);
       this.clickZone.setPosition(this.cookie.x, this.cookie.y);
       this.clickZone.setSize(210 * scale, 210 * scale);
-      this.jet.setPosition(rect.x + rect.width * 0.52, rect.y + Math.max(48, rect.height * 0.22));
-      this.jet.setScale(Phaser.Math.Clamp(rect.width / 760, 0.38, 0.82));
+      this.jet.setPosition(rect.x + rect.width * 0.52, rect.y + Math.max(44, rect.height * 0.23));
+      this.jet.setScale(Phaser.Math.Clamp(rect.width / 760, 0.34, 0.84));
     }
 
     renderUi() {
@@ -295,102 +309,249 @@ export function createJetlagScene({ actions, getData }) {
       this.uiLayer.removeAll(true);
       this.stagePanel.clear();
       this.drawStagePanel();
-      this.drawStats();
-      this.drawCommandPanel();
-      this.drawShopPanel();
-      this.clampScroll("command");
-      this.clampScroll("shop");
+      this.drawLeftDock();
+      this.drawRightDock();
+      this.clampScroll("left");
+      this.clampScroll("right");
     }
 
     drawStagePanel() {
       const rect = this.layoutRects.stage;
-      this.stagePanel.lineStyle(2, 0xffffff, 0.68);
-      this.stagePanel.fillStyle(0xffffff, 0.28);
+      this.stagePanel.lineStyle(2, 0xffffff, 0.72);
+      this.stagePanel.fillStyle(0xffffff, 0.24);
       this.stagePanel.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 14);
       this.stagePanel.strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 14);
-      this.addUiText("Tap the carbon cookie", rect.x + 18, rect.y + 16, 16, textColor.ink, {
-        fontStyle: "900"
+      this.addUiText("Tap the carbon cookie", rect.x + 18, rect.y + 16, rect.width < 360 ? 13 : 16, textColor.ink, {
+        fontStyle: "900",
+        maxChars: rect.width < 360 ? 20 : 28
       });
       this.addUiText("Parody benchmark. No live tracking.", rect.x + rect.width / 2, rect.y + rect.height - 22, 12, textColor.muted, {
         align: "center",
+        maxChars: Math.max(24, Math.floor(rect.width / 8)),
         originX: 0.5
       });
     }
 
-    drawStats() {
-      const rect = this.layoutRects.stats;
-      const compact = this.scale.width < 700;
-      const stats = compact ? this.dataSnapshot.stats.slice(0, 3) : this.dataSnapshot.stats;
-      const gap = compact ? 6 : 10;
-      const cardWidth = (rect.width - gap * (stats.length - 1)) / stats.length;
+    drawLeftDock() {
+      const { leftDrawer, leftRail, mode } = this.layoutRects;
+      if (mode === "compact") {
+        this.drawLeftRail(leftRail, this.compactPanel === "left" && !this.leftCollapsed);
+        if (leftDrawer) {
+          this.drawStatsDesk(leftDrawer);
+        }
+        return;
+      }
 
-      stats.forEach((stat, index) => {
-        const x = rect.x + index * (cardWidth + gap);
-        this.drawCard(x, rect.y, cardWidth, rect.height, colors.panel, 0.92);
-        this.addUiText(stat.label, x + 10, rect.y + 10, compact ? 10 : 11, textColor.muted, {
-          fontStyle: "900",
-          maxChars: compact ? 12 : 18
-        });
-        this.addUiText(stat.value, x + 10, rect.y + (compact ? 29 : 36), compact ? 13 : 17, textColor.ink, {
-          fontStyle: "900",
-          maxChars: compact ? 14 : 24
-        });
+      if (leftDrawer?.collapsed) {
+        this.drawLeftRail(leftDrawer, false);
+        return;
+      }
+      this.drawStatsDesk(leftDrawer);
+    }
+
+    drawRightDock() {
+      const { rightDrawer, rightRail, mode } = this.layoutRects;
+      if (mode === "compact") {
+        this.drawRightRail(rightRail, this.compactPanel === "right" && !this.rightCollapsed);
+        if (rightDrawer) {
+          this.drawCommerceDesk(rightDrawer);
+        }
+        return;
+      }
+
+      if (rightDrawer?.collapsed) {
+        this.drawRightRail(rightDrawer, false);
+        return;
+      }
+      this.drawCommerceDesk(rightDrawer);
+    }
+
+    drawLeftRail(rect, active) {
+      if (!rect) {
+        return;
+      }
+      this.drawRailShell(rect, active);
+      this.drawLogoBadge(rect.x + 7, rect.y + 10, Math.min(34, rect.width - 14), this.uiLayer);
+      this.makeButton(rect.x + 6, rect.y + 56, rect.width - 12, 34, rect.width < 50 ? "JB" : "Stats", true, () => {
+        this.leftCollapsed = false;
+        this.compactPanel = "left";
+        this.layout();
+      }, active, this.uiLayer);
+      this.addUiText("Desk", rect.x + rect.width / 2, rect.y + rect.height - 22, 10, active ? textColor.ink : textColor.white, {
+        align: "center",
+        fontStyle: "900",
+        originX: 0.5
       });
     }
 
-    drawCommandPanel() {
-      const rect = this.layoutRects.command;
-      const contentTop = rect.y + 14;
-      const contentBottom = rect.y + rect.height - 12;
-      const viewportHeight = contentBottom - contentTop;
-      let y = contentTop - this.scroll.command;
+    drawRightRail(rect, active) {
+      if (!rect) {
+        return;
+      }
+      this.drawRailShell(rect, active);
+      this.makeButton(rect.x + 6, rect.y + 12, rect.width - 12, 34, rect.width < 50 ? "M" : "Market", true, () => {
+        this.rightTab = "market";
+        this.rightCollapsed = false;
+        this.compactPanel = "right";
+        this.layout();
+      }, active && this.rightTab === "market", this.uiLayer);
+      this.makeButton(rect.x + 6, rect.y + 54, rect.width - 12, 34, "PR", true, () => {
+        this.rightTab = "pr";
+        this.rightCollapsed = false;
+        this.compactPanel = "right";
+        this.layout();
+      }, active && this.rightTab === "pr", this.uiLayer);
+      this.addUiText("Dock", rect.x + rect.width / 2, rect.y + rect.height - 22, 10, active ? textColor.ink : textColor.white, {
+        align: "center",
+        fontStyle: "900",
+        originX: 0.5
+      });
+    }
 
-      this.drawPanel(rect, "Command Deck");
+    drawRailShell(rect, active) {
+      const rail = this.add.graphics();
+      rail.fillStyle(active ? colors.panel : colors.ink, active ? 0.92 : 0.88);
+      rail.lineStyle(1, active ? colors.line : 0xffffff, active ? 0.88 : 0.2);
+      rail.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
+      rail.strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
+      this.uiLayer.add(rail);
+    }
+
+    drawStatsDesk(rect) {
+      if (!rect) {
+        return;
+      }
+      const headerHeight = 92;
+      const contentTop = rect.y + headerHeight;
+      const contentBottom = rect.y + rect.height - 12;
+      const viewportHeight = Math.max(1, contentBottom - contentTop);
+      let y = contentTop - this.scroll.left;
+
+      this.drawPanelShell(rect, {
+        title: "",
+        eyebrow: "",
+        color: colors.teal,
+        fill: colors.panel
+      });
+      this.drawStatsHeader(rect);
 
       const content = this.createClipContainer(rect, contentTop, viewportHeight);
-      y = this.commandTitle(content, rect, y);
-      y = this.commandBars(content, rect, y);
-      y = this.commandButtons(content, rect, y);
-      y = this.commandMoral(content, rect, y);
-      y = this.commandLog(content, rect, y);
-      y = this.commandAchievements(content, rect, y);
+      y = this.drawBalanceCard(content, rect, y);
+      y = this.drawMetrics(content, rect, y);
+      y = this.drawBenchmarkBars(content, rect, y);
+      y = this.drawCommandButtons(content, rect, y);
+      y = this.drawMoralLicensing(content, rect, y);
+      y = this.drawCampaignLog(content, rect, y);
+      y = this.drawAchievements(content, rect, y);
 
-      const contentHeight = y - contentTop + this.scroll.command;
-      this.scrollMax.command = Math.max(0, contentHeight - viewportHeight);
-      this.drawScrollbar("command", rect, contentTop, viewportHeight, contentHeight);
+      const contentHeight = y - contentTop + this.scroll.left;
+      this.scrollMax.left = Math.max(0, contentHeight - viewportHeight);
+      this.drawScrollbar("left", rect, contentTop, viewportHeight, contentHeight, colors.teal);
     }
 
-    commandTitle(parent, rect, y) {
-      this.addUiText("Fictional benchmark chase", rect.x + 14, y, 10, textColor.teal, {
+    drawStatsHeader(rect) {
+      this.drawLogoBadge(rect.x + 14, rect.y + 18, 38, this.uiLayer);
+      this.addUiText(this.dataSnapshot.brand?.name || "Jetlag Billionaire", rect.x + 62, rect.y + 18, 15, textColor.white, {
+        fontStyle: "900",
+        maxChars: Math.max(18, Math.floor((rect.width - 122) / 8))
+      });
+      this.addUiText("Stats Desk", rect.x + 62, rect.y + 40, 10, "#ccfbf1", {
+        fontStyle: "900",
+        maxChars: Math.max(18, Math.floor((rect.width - 122) / 7))
+      });
+      this.addUiText(this.dataSnapshot.privacyStatus, rect.x + 14, rect.y + 68, 10, textColor.muted, {
+        fontStyle: "900",
+        maxChars: Math.max(24, Math.floor((rect.width - 84) / 7))
+      });
+      this.makeButton(rect.x + rect.width - 64, rect.y + 18, 48, 30, "Fold", true, () => {
+        this.leftCollapsed = true;
+        this.layout();
+      }, false, this.uiLayer);
+    }
+
+    drawBalanceCard(parent, rect, y) {
+      const width = rect.width - 28;
+      const height = 84;
+      const x = rect.x + 14;
+      const bg = this.add.graphics();
+      bg.fillStyle(colors.ink, 0.94);
+      bg.lineStyle(1, colors.gold, 0.7);
+      bg.fillRoundedRect(x, y, width, height, 10);
+      bg.strokeRoundedRect(x, y, width, height, 10);
+      parent.add(bg);
+      this.addUiText(this.dataSnapshot.balance.label, x + 14, y + 12, 10, "#fde68a", {
         fontStyle: "900",
         parent
       });
-      this.addUiText("Outrun the excuse.", rect.x + 14, y + 18, rect.width < 290 ? 19 : 22, textColor.ink, {
+      this.addUiText(this.dataSnapshot.balance.value, x + 14, y + 32, rect.width < 300 ? 20 : 24, textColor.white, {
         fontStyle: "900",
-        maxChars: 24,
+        maxChars: Math.max(14, Math.floor(width / 10)),
         parent
       });
-      return y + 54;
+      this.addUiText(this.dataSnapshot.balance.status, x + 14, y + 62, 10, "#cbd5e1", {
+        fontStyle: "900",
+        maxChars: Math.max(22, Math.floor(width / 7)),
+        parent
+      });
+      return y + height + 12;
     }
 
-    commandBars(parent, rect, y) {
+    drawMetrics(parent, rect, y) {
+      const metrics = this.dataSnapshot.metrics || [];
+      const gap = 8;
+      const columns = rect.width >= 300 ? 2 : 1;
+      const cardWidth = (rect.width - 28 - gap * (columns - 1)) / columns;
+      const cardHeight = 56;
+
+      metrics.forEach((metric, index) => {
+        const col = index % columns;
+        const row = Math.floor(index / columns);
+        const x = rect.x + 14 + col * (cardWidth + gap);
+        const cardY = y + row * (cardHeight + gap);
+        this.drawCard(x, cardY, cardWidth, cardHeight, colors.paper, 0.96, parent);
+        this.addUiText(metric.label, x + 10, cardY + 9, 10, textColor.muted, {
+          fontStyle: "900",
+          maxChars: Math.max(10, Math.floor(cardWidth / 7)),
+          parent
+        });
+        this.addUiText(metric.value, x + 10, cardY + 29, 13, textColor.ink, {
+          fontStyle: "900",
+          maxChars: Math.max(10, Math.floor(cardWidth / 8)),
+          parent
+        });
+      });
+
+      return y + Math.ceil(metrics.length / columns) * (cardHeight + gap) + 6;
+    }
+
+    drawBenchmarkBars(parent, rect, y) {
+      this.addUiText("Fictional benchmark chase", rect.x + 14, y, 11, textColor.teal, {
+        fontStyle: "900",
+        parent
+      });
+      this.addUiText("Outrun the excuse.", rect.x + 14, y + 18, rect.width < 300 ? 19 : 22, textColor.ink, {
+        fontStyle: "900",
+        maxChars: Math.max(18, Math.floor((rect.width - 28) / 9)),
+        parent
+      });
+      y += 54;
       this.drawProgress(parent, rect.x + 14, y, rect.width - 28, "Benchmark", this.dataSnapshot.progress, colors.teal, colors.emerald);
       this.drawProgress(parent, rect.x + 14, y + 42, rect.width - 28, `Guilt: ${this.dataSnapshot.guiltLabel}`, this.dataSnapshot.guilt, colors.amber, colors.rose);
       return y + 88;
     }
 
-    commandButtons(parent, rect, y) {
+    drawCommandButtons(parent, rect, y) {
       const gap = 8;
-      const saveWidth = 76;
+      const saveWidth = 72;
       this.makeButton(rect.x + 14, y, rect.width - 28 - saveWidth - gap, 36, "Emit guilt", true, () => this.handleEmit(), false, parent);
       this.makeButton(rect.x + rect.width - 14 - saveWidth, y, saveWidth, 36, "Save", true, () => actions.save(), false, parent);
       this.makeButton(rect.x + 14, y + 44, rect.width - 28, 36, "Offset and restart", this.dataSnapshot.canPrestige, () => actions.prestige(), false, parent);
       return y + 92;
     }
 
-    commandMoral(parent, rect, y) {
-      this.drawCard(rect.x + 14, y, rect.width - 28, 62, colors.slate, 0.92, parent);
-      this.addUiText("Moral licensing", rect.x + 26, y + 12, 10, textColor.muted, {
+    drawMoralLicensing(parent, rect, y) {
+      this.drawCard(rect.x + 14, y, rect.width - 28, 62, colors.cream, 0.94, parent);
+      this.addUiText("Moral licensing", rect.x + 26, y + 12, 10, textColor.amber, {
         fontStyle: "900",
         parent
       });
@@ -400,21 +561,21 @@ export function createJetlagScene({ actions, getData }) {
         originX: 1,
         parent
       });
-      this.addUiText("Resets add a permanent 25% multiplier.", rect.x + 26, y + 36, 12, textColor.muted, {
-        maxChars: 36,
+      this.addUiText("Permanent reset multiplier", rect.x + 26, y + 38, 12, textColor.muted, {
+        maxChars: 32,
         parent
       });
       return y + 76;
     }
 
-    commandLog(parent, rect, y) {
+    drawCampaignLog(parent, rect, y) {
       this.addUiText("Campaign log", rect.x + 14, y, 13, textColor.ink, {
         fontStyle: "900",
         parent
       });
       y += 22;
       this.dataSnapshot.log.slice(0, 5).forEach((entry) => {
-        this.drawCard(rect.x + 14, y, rect.width - 28, 34, colors.panel, 0.9, parent);
+        this.drawCard(rect.x + 14, y, rect.width - 28, 34, colors.panel, 0.88, parent);
         this.addUiText(entry, rect.x + 24, y + 10, 11, textColor.muted, {
           maxChars: rect.width < 290 ? 34 : 43,
           parent
@@ -424,7 +585,7 @@ export function createJetlagScene({ actions, getData }) {
       return y + 8;
     }
 
-    commandAchievements(parent, rect, y) {
+    drawAchievements(parent, rect, y) {
       const earned = this.dataSnapshot.achievements.filter((achievement) => achievement.earned);
       this.addUiText(`Achievements ${earned.length}/${this.dataSnapshot.achievements.length}`, rect.x + 14, y, 13, textColor.ink, {
         fontStyle: "900",
@@ -433,11 +594,11 @@ export function createJetlagScene({ actions, getData }) {
       y += 24;
 
       if (earned.length === 0) {
-        this.drawCard(rect.x + 14, y, rect.width - 28, 40, colors.panel, 0.78, parent);
-        this.addUiText("Nothing framed yet.", rect.x + 24, y + 12, 12, textColor.muted, {
+        this.drawCard(rect.x + 14, y, rect.width - 28, 42, colors.panel, 0.78, parent);
+        this.addUiText("Nothing framed yet.", rect.x + 24, y + 13, 12, textColor.muted, {
           parent
         });
-        return y + 52;
+        return y + 54;
       }
 
       earned.slice(0, 6).forEach((achievement) => {
@@ -456,113 +617,177 @@ export function createJetlagScene({ actions, getData }) {
       return y + 8;
     }
 
-    drawShopPanel() {
-      const rect = this.layoutRects.shop;
-      const headerHeight = 88;
+    drawCommerceDesk(rect) {
+      if (!rect) {
+        return;
+      }
+      const headerHeight = 108;
       const contentTop = rect.y + headerHeight;
       const contentBottom = rect.y + rect.height - 12;
-      const viewportHeight = contentBottom - contentTop;
-      const items = this.shopTab === "emitters" ? this.dataSnapshot.emitters : this.dataSnapshot.upgrades;
-      const rowHeight = this.layoutRects.mode === "wide" ? 112 : 108;
+      const viewportHeight = Math.max(1, contentBottom - contentTop);
+      const items = this.rightTab === "market" ? this.dataSnapshot.emitters : this.dataSnapshot.upgrades;
+      const rowHeight = this.rightTab === "market" ? 118 : 122;
       const contentHeight = Math.max(viewportHeight, items.length * rowHeight + 8);
 
-      this.drawPanel(rect, "Hangar Shop");
+      this.drawPanelShell(rect, {
+        title: this.rightTab === "market" ? "Hangar Market" : "PR Firm",
+        eyebrow: this.rightTab === "market" ? "Emitter inventory" : "Approval counter",
+        color: this.rightTab === "market" ? colors.hangar : colors.rose,
+        fill: this.rightTab === "market" ? colors.panel : 0xfff7fb
+      });
+      this.drawCommerceHeader(rect);
 
       const content = this.createClipContainer(rect, contentTop, viewportHeight);
-      let y = contentTop - this.scroll.shop;
+      let y = contentTop - this.scroll.right;
       items.forEach((item) => {
         if (y < contentBottom && y + rowHeight > contentTop) {
-          this.drawShopCard(rect.x + 14, y, rect.width - 28, rowHeight - 8, item, content);
+          this.drawCommerceCard(rect.x + 14, y, rect.width - 28, rowHeight - 8, item, content);
         }
         y += rowHeight;
       });
 
       if (items.length === 0) {
         this.drawCard(rect.x + 14, contentTop, rect.width - 28, 58, colors.slate, 0.9, content);
-        this.addUiText("Nothing else has cleared legal yet.", rect.x + 28, contentTop + 21, 12, textColor.muted, {
+        this.addUiText(this.rightTab === "market" ? "No new inventory." : "All visible campaigns approved.", rect.x + 28, contentTop + 21, 12, textColor.muted, {
           maxChars: 38,
           parent: content
         });
       }
 
-      this.scrollMax.shop = Math.max(0, contentHeight - viewportHeight);
-      this.drawShopHeader(rect);
-      this.drawScrollbar("shop", rect, contentTop, viewportHeight, contentHeight);
+      this.scrollMax.right = Math.max(0, contentHeight - viewportHeight);
+      this.drawScrollbar("right", rect, contentTop, viewportHeight, contentHeight, this.rightTab === "market" ? colors.amber : colors.rose);
     }
 
-    drawShopHeader(rect) {
-      this.addUiText("Hangar Shop", rect.x + 14, rect.y + 14, 16, textColor.ink, {
-        fontStyle: "900"
-      });
-      this.addUiText("Wheel or drag the list", rect.x + rect.width - 14, rect.y + 17, 10, textColor.muted, {
-        align: "right",
-        fontStyle: "900",
-        originX: 1
-      });
-      const tabY = rect.y + 42;
+    drawCommerceHeader(rect) {
+      this.makeButton(rect.x + rect.width - 64, rect.y + 18, 48, 30, "Fold", true, () => {
+        this.rightCollapsed = true;
+        this.layout();
+      }, false, this.uiLayer);
+
+      const tabY = rect.y + 62;
       const tabWidth = (rect.width - 36) / 2;
-      this.makeButton(rect.x + 14, tabY, tabWidth, 32, "Emitters", true, () => {
-        this.shopTab = "emitters";
-        this.scroll.shop = 0;
+      this.makeButton(rect.x + 14, tabY, tabWidth, 32, "Market", true, () => {
+        this.rightTab = "market";
+        this.scroll.right = 0;
         this.renderUi();
-      }, this.shopTab === "emitters");
-      this.makeButton(rect.x + 22 + tabWidth, tabY, tabWidth, 32, "PR", true, () => {
-        this.shopTab = "pr";
-        this.scroll.shop = 0;
+      }, this.rightTab === "market", this.uiLayer);
+      this.makeButton(rect.x + 22 + tabWidth, tabY, tabWidth, 32, "PR Firm", true, () => {
+        this.rightTab = "pr";
+        this.scroll.right = 0;
         this.renderUi();
-      }, this.shopTab === "pr");
+      }, this.rightTab === "pr", this.uiLayer);
     }
 
-    drawShopCard(x, y, width, height, item, parent) {
-      this.drawCard(x, y, width, height, colors.slate, 0.95, parent);
-      this.addUiText(item.detail, x + 12, y + 10, 10, textColor.teal, {
+    drawCommerceCard(x, y, width, height, item, parent) {
+      const approved = Boolean(item.approved);
+      const available = Boolean(item.canBuy);
+      const fill = approved ? 0xecfdf5 : available ? 0xf0fdfa : colors.paper;
+      const accent = approved ? colors.emerald : available ? colors.teal : colors.disabled;
+      this.drawCard(x, y, width, height, fill, 0.96, parent);
+
+      const stripe = this.add.graphics();
+      stripe.fillStyle(accent, available || approved ? 0.9 : 0.52);
+      stripe.fillRoundedRect(x, y, 6, height, 4);
+      parent.add(stripe);
+
+      const status = approved ? "APPROVED" : available ? "READY" : "SAVING UP";
+      const statusColor = approved || available ? textColor.emerald : textColor.muted;
+      this.addUiText(item.detail, x + 16, y + 10, 10, this.rightTab === "market" ? textColor.teal : textColor.rose, {
         fontStyle: "900",
         maxChars: Math.max(16, Math.floor(width / 11)),
         parent
       });
-      this.addUiText(item.name, x + 12, y + 28, 14, textColor.ink, {
+      this.addUiText(status, x + width - 12, y + 10, 10, statusColor, {
+        align: "right",
+        fontStyle: "900",
+        originX: 1,
+        parent
+      });
+      this.addUiText(item.name, x + 16, y + 30, 14, textColor.ink, {
         fontStyle: "900",
         maxChars: Math.max(18, Math.floor(width / 9)),
         parent
       });
-      this.addUiText(item.description, x + 12, y + 50, 11, textColor.muted, {
+      this.addUiText(item.description, x + 16, y + 52, 11, textColor.muted, {
         maxChars: Math.max(25, Math.floor(width / 8)),
         parent
       });
+
       const ownedText = typeof item.owned === "number" ? `Owned ${item.owned}` : "";
       if (ownedText) {
-        this.addUiText(ownedText, x + width - 12, y + 10, 10, textColor.muted, {
+        this.addUiText(ownedText, x + width - 12, y + 30, 10, textColor.muted, {
           align: "right",
           fontStyle: "900",
           originX: 1,
           parent
         });
       }
-      this.addUiText(item.price, x + 12, y + height - 28, 10, textColor.muted, {
-        fontStyle: "900",
-        maxChars: Math.max(15, Math.floor(width / 12)),
-        parent
-      });
-      this.makeButton(x + width - 90, y + height - 40, 78, 32, "Buy", item.canBuy, () => {
-        if (this.shopTab === "emitters") {
+
+      const priceColor = available ? textColor.teal : approved ? textColor.emerald : textColor.muted;
+      this.drawPricePill(parent, x + 16, y + height - 34, Math.min(148, width - 116), 26, item.price, priceColor);
+      const label = approved ? "Approved" : this.rightTab === "market" ? "Buy" : "Approve";
+      this.makeButton(x + width - 92, y + height - 38, 80, 32, label, available, () => {
+        if (this.rightTab === "market") {
           actions.buyEmitter(item.id);
         } else {
           actions.buyUpgrade(item.id);
         }
-      }, false, parent);
+      }, available, parent);
     }
 
-    drawPanel(rect, title) {
-      this.drawCard(rect.x, rect.y, rect.width, rect.height, colors.panel, 0.86);
-      const line = this.add.graphics();
-      line.lineStyle(1, colors.line, 0.8);
-      line.strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
-      this.uiLayer.add(line);
-      if (title === "Command Deck") {
-        this.addUiText(title, rect.x + 14, rect.y + rect.height - 22, 10, textColor.muted, {
-          fontStyle: "900"
+    drawPanelShell(rect, { title, eyebrow, color, fill }) {
+      const shell = this.add.graphics();
+      shell.fillStyle(fill, 0.9);
+      shell.lineStyle(1, colors.line, 0.82);
+      shell.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
+      shell.strokeRoundedRect(rect.x, rect.y, rect.width, rect.height, 12);
+      shell.fillStyle(color, 0.92);
+      shell.fillRoundedRect(rect.x + 8, rect.y + 8, rect.width - 16, 44, 10);
+      shell.fillRect(rect.x + 8, rect.y + 30, rect.width - 16, 22);
+      this.uiLayer.add(shell);
+
+      if (eyebrow) {
+        this.addUiText(eyebrow, rect.x + 20, rect.y + 15, 10, "#e2e8f0", {
+          fontStyle: "900",
+          maxChars: Math.max(16, Math.floor((rect.width - 92) / 7))
         });
       }
+      if (title) {
+        this.addUiText(title, rect.x + 20, rect.y + 31, 17, textColor.white, {
+          fontStyle: "900",
+          maxChars: Math.max(14, Math.floor((rect.width - 98) / 9))
+        });
+      }
+    }
+
+    drawLogoBadge(x, y, size, parent) {
+      const badge = this.add.graphics();
+      badge.fillStyle(colors.ink, 1);
+      badge.fillRoundedRect(x, y, size, size, 8);
+      badge.lineStyle(1, 0xffffff, 0.2);
+      badge.strokeRoundedRect(x, y, size, size, 8);
+      parent.add(badge);
+      this.addUiText("JB", x + size / 2, y + size / 2 - 1, Math.max(11, Math.round(size * 0.36)), textColor.white, {
+        align: "center",
+        fontStyle: "900",
+        originX: 0.5,
+        originY: 0.5,
+        parent
+      });
+    }
+
+    drawPricePill(parent, x, y, width, height, label, color) {
+      const pill = this.add.graphics();
+      pill.fillStyle(0xffffff, 0.86);
+      pill.lineStyle(1, colors.line, 0.82);
+      pill.fillRoundedRect(x, y, width, height, height / 2);
+      pill.strokeRoundedRect(x, y, width, height, height / 2);
+      parent.add(pill);
+      this.addUiText(label, x + 10, y + 7, 10, color, {
+        fontStyle: "900",
+        maxChars: Math.max(10, Math.floor((width - 16) / 7)),
+        parent
+      });
     }
 
     drawProgress(parent, x, y, width, label, value, startColor, endColor) {
@@ -581,11 +806,11 @@ export function createJetlagScene({ actions, getData }) {
       bg.fillStyle(0xe2e8f0, 1);
       bg.fillRoundedRect(x, y + 18, width, 10, 5);
       bg.fillGradientStyle(startColor, endColor, startColor, endColor, 1);
-      bg.fillRoundedRect(x, y + 18, Math.max(8, width * Math.min(100, value) / 100), 10, 5);
+      bg.fillRoundedRect(x, y + 18, Math.max(8, (width * Math.min(100, value)) / 100), 10, 5);
       parent.add(bg);
     }
 
-    drawScrollbar(key, rect, y, height, contentHeight) {
+    drawScrollbar(key, rect, y, height, contentHeight, color) {
       if (contentHeight <= height + 4) {
         return;
       }
@@ -596,7 +821,7 @@ export function createJetlagScene({ actions, getData }) {
       const bar = this.add.graphics();
       bar.fillStyle(0xe2e8f0, 0.86);
       bar.fillRoundedRect(x, y, 4, height, 2);
-      bar.fillStyle(colors.teal, 0.9);
+      bar.fillStyle(color, 0.9);
       bar.fillRoundedRect(x - 1, thumbY, 6, thumbHeight, 3);
       this.uiLayer.add(bar);
     }
@@ -611,10 +836,10 @@ export function createJetlagScene({ actions, getData }) {
       bg.fillRoundedRect(0, 0, width, height, 7);
       bg.strokeRoundedRect(0, 0, width, height, 7);
       const text = this.add
-        .text(Math.round(width / 2), Math.round(height / 2), label, {
+        .text(Math.round(width / 2), Math.round(height / 2), truncate(label, Math.max(4, Math.floor(width / 7))), {
           color: selected ? textColor.white : enabled ? textColor.ink : "#64748b",
           fontFamily: "Arial, sans-serif",
-          fontSize: `${height < 30 ? 11 : 12}px`,
+          fontSize: `${height < 30 ? 10 : 12}px`,
           fontStyle: "900",
           resolution: textResolution
         })
@@ -770,11 +995,11 @@ export function createJetlagScene({ actions, getData }) {
     }
 
     panelAt(x, y) {
-      if (contains(this.layoutRects.shop, x, y)) {
-        return "shop";
+      if (contains(this.layoutRects.leftDrawer, x, y)) {
+        return "left";
       }
-      if (contains(this.layoutRects.command, x, y)) {
-        return "command";
+      if (contains(this.layoutRects.rightDrawer, x, y)) {
+        return "right";
       }
       return null;
     }

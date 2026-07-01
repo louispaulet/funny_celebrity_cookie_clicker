@@ -114,11 +114,22 @@ function buildGameData(state) {
   const moralMultiplier = 1 + state.moralCredits * 0.25;
   const totalKg = moleculesToKg(state.totalMolecules);
   const visibleEmitters = buyableEmitters.filter((item) => canSee(item, state));
-  const visibleUpgrades = buyableUpgrades.filter((item) => canSee(item, state) && !state.upgrades[item.id]);
+  const visibleUpgrades = buyableUpgrades.filter((item) => canSee(item, state));
+  const privacyStatus = state.privacyMode ? "Privacy mode active" : "Public readout";
 
   return {
-    stats: [
-      { label: "Visible", value: state.privacyMode ? "Classified" : formatMass(state.molecules) },
+    brand: {
+      initials: "JB",
+      name: "Jetlag Billionaire",
+      subtitle: "Satirical idle game"
+    },
+    balance: {
+      label: "Current CO2",
+      value: formatMass(state.molecules),
+      status: privacyStatus
+    },
+    privacyStatus,
+    metrics: [
       { label: "Rate", value: `${formatMass(production)} / sec` },
       { label: "Tap power", value: formatMass(clickAmount) },
       { label: "Fictional ratio", value: `${formatNumber(snapshot.ratio)} Stars` },
@@ -153,9 +164,10 @@ function buildGameData(state) {
       id: item.id,
       name: item.name,
       description: item.description,
-      detail: "Public relations",
+      detail: state.upgrades[item.id] ? "Approved campaign" : "Public relations",
       price: formatMass(item.cost),
-      canBuy: state.molecules >= item.cost
+      approved: Boolean(state.upgrades[item.id]),
+      canBuy: !state.upgrades[item.id] && state.molecules >= item.cost
     }))
   };
 }
