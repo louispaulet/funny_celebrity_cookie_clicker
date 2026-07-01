@@ -55,7 +55,8 @@ export default function GameCanvas({ actions, data }) {
       },
       render: {
         antialias: true,
-        pixelArt: false
+        pixelArt: false,
+        roundPixels: true
       },
       scene: Scene,
       transparent: false

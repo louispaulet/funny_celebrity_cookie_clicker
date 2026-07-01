@@ -21,6 +21,15 @@ const textColor = {
   white: "#ffffff"
 };
 
+const textResolution = 2;
+
+const assetRoot = `${import.meta.env?.BASE_URL || "/"}assets/game/`;
+const gameAssets = {
+  backdrop: `${assetRoot}stage-backdrop.png`,
+  cookie: `${assetRoot}carbon-cookie.png`,
+  jet: `${assetRoot}private-jet.png`
+};
+
 export function createJetlagScene({ actions, getData }) {
   return class JetlagScene extends Phaser.Scene {
     constructor() {
@@ -41,8 +50,15 @@ export function createJetlagScene({ actions, getData }) {
       this.cookieTween = null;
     }
 
+    preload() {
+      this.load.image("stage-backdrop", gameAssets.backdrop);
+      this.load.image("private-jet", gameAssets.jet);
+      this.load.image("carbon-cookie", gameAssets.cookie);
+    }
+
     create() {
       this.background = this.add.graphics();
+      this.stageBackdrop = this.add.image(0, 0, "stage-backdrop").setOrigin(0.5).setAlpha(0.95);
       this.stagePanel = this.add.graphics();
       this.cloudLayer = this.add.container();
       this.jet = this.add.container();
@@ -68,22 +84,25 @@ export function createJetlagScene({ actions, getData }) {
 
     createCookie() {
       this.cookieGlow = this.add.circle(0, 0, 104, 0x14b8a6, 0.16);
-      this.cookieBody = this.add.circle(0, 0, 72, colors.ink, 1);
-      this.cookieRing = this.add.circle(0, 0, 78).setStrokeStyle(7, colors.amber, 1);
+      this.cookieBody = this.add.image(0, 0, "carbon-cookie").setDisplaySize(154, 155);
+      this.cookieRing = this.add.circle(0, 0, 82).setStrokeStyle(4, colors.amber, 0.78);
       this.cookieText = this.add
         .text(0, -8, "CO2", {
           color: textColor.white,
           fontFamily: "Arial, sans-serif",
           fontSize: "36px",
-          fontStyle: "900"
+          fontStyle: "900",
+          resolution: textResolution
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5)
+        .setShadow(0, 2, "#0f172a", 4, true, true);
       this.cookieHint = this.add
         .text(0, 36, "TAP", {
           color: "#f8fafc",
           fontFamily: "Arial, sans-serif",
           fontSize: "14px",
-          fontStyle: "900"
+          fontStyle: "900",
+          resolution: textResolution
         })
         .setOrigin(0.5);
       this.cookie.add([this.cookieGlow, this.cookieBody, this.cookieRing, this.cookieText, this.cookieHint]);
@@ -98,10 +117,10 @@ export function createJetlagScene({ actions, getData }) {
     buildClouds() {
       this.cloudLayer.removeAll(true);
       this.cloudSpecs = [
-        [0.16, 0.22, 72, 20, 0.75],
-        [0.34, 0.14, 110, 26, 0.62],
-        [0.72, 0.25, 95, 24, 0.7],
-        [0.86, 0.42, 130, 28, 0.48]
+        [0.16, 0.22, 72, 20, 0.22],
+        [0.34, 0.14, 110, 26, 0.18],
+        [0.72, 0.25, 95, 24, 0.2],
+        [0.86, 0.42, 130, 28, 0.14]
       ];
       this.cloudSpecs.forEach(() => {
         this.cloudLayer.add(this.add.graphics());
@@ -110,17 +129,9 @@ export function createJetlagScene({ actions, getData }) {
 
     drawJet() {
       this.jet.removeAll(true);
-      const body = this.add.graphics();
-      body.fillStyle(0x111827, 1);
-      body.fillRoundedRect(-112, -16, 178, 32, 16);
-      body.fillTriangle(54, -15, 118, 0, 54, 15);
-      body.fillTriangle(-46, -16, -100, -58, -20, -16);
-      body.fillTriangle(-18, 14, -92, 52, -44, 14);
-      body.fillStyle(0x14b8a6, 1);
-      for (let index = 0; index < 5; index += 1) {
-        body.fillCircle(-58 + index * 28, -2, 4);
-      }
-      this.jet.add(body);
+      this.jetSprite = this.add.image(0, 0, "private-jet").setOrigin(0.5);
+      this.jetSprite.setDisplaySize(360, 106);
+      this.jet.add(this.jetSprite);
     }
 
     updateGameData(data) {
@@ -137,6 +148,7 @@ export function createJetlagScene({ actions, getData }) {
       this.cameras.main.setSize(width, height);
       this.computeLayout(width, height);
       this.drawBackground(width, height);
+      this.positionStageBackdrop();
       this.drawClouds();
       this.positionStageObjects();
       this.renderUi();
@@ -219,6 +231,30 @@ export function createJetlagScene({ actions, getData }) {
       }
     }
 
+    positionStageBackdrop() {
+      const rect = this.layoutRects.stage;
+      if (!rect || !this.stageBackdrop) {
+        return;
+      }
+
+      const image = this.textures.get("stage-backdrop").getSourceImage();
+      const imageRatio = image.width / image.height;
+      const rectRatio = rect.width / rect.height;
+      let cropWidth = image.width;
+      let cropHeight = image.height;
+
+      if (imageRatio > rectRatio) {
+        cropWidth = image.height * rectRatio;
+      } else {
+        cropHeight = image.width / rectRatio;
+      }
+
+      this.stageBackdrop
+        .setPosition(rect.x + rect.width / 2, rect.y + rect.height / 2)
+        .setCrop((image.width - cropWidth) / 2, (image.height - cropHeight) / 2, cropWidth, cropHeight)
+        .setScale(rect.width / cropWidth, rect.height / cropHeight);
+    }
+
     drawClouds() {
       const rect = this.layoutRects.stage;
       if (!rect) {
@@ -248,7 +284,7 @@ export function createJetlagScene({ actions, getData }) {
       this.clickZone.setPosition(this.cookie.x, this.cookie.y);
       this.clickZone.setSize(210 * scale, 210 * scale);
       this.jet.setPosition(rect.x + rect.width * 0.52, rect.y + Math.max(48, rect.height * 0.22));
-      this.jet.setScale(Phaser.Math.Clamp(rect.width / 800, 0.42, 0.9));
+      this.jet.setScale(Phaser.Math.Clamp(rect.width / 760, 0.38, 0.82));
     }
 
     renderUi() {
@@ -566,7 +602,7 @@ export function createJetlagScene({ actions, getData }) {
     }
 
     makeButton(x, y, width, height, label, enabled, callback, selected = false, parent = this.uiLayer) {
-      const container = this.add.container(x, y);
+      const container = this.add.container(Math.round(x), Math.round(y));
       const bg = this.add.graphics();
       const fill = selected ? colors.ink : enabled ? colors.panel : 0xe2e8f0;
       const border = selected ? colors.ink : enabled ? colors.line : 0xcbd5e1;
@@ -575,11 +611,12 @@ export function createJetlagScene({ actions, getData }) {
       bg.fillRoundedRect(0, 0, width, height, 7);
       bg.strokeRoundedRect(0, 0, width, height, 7);
       const text = this.add
-        .text(width / 2, height / 2, label, {
+        .text(Math.round(width / 2), Math.round(height / 2), label, {
           color: selected ? textColor.white : enabled ? textColor.ink : "#64748b",
           fontFamily: "Arial, sans-serif",
           fontSize: `${height < 30 ? 11 : 12}px`,
-          fontStyle: "900"
+          fontStyle: "900",
+          resolution: textResolution
         })
         .setOrigin(0.5);
       const hitTarget = this.add.rectangle(0, 0, width, height, 0xffffff, 0).setOrigin(0);
@@ -624,12 +661,13 @@ export function createJetlagScene({ actions, getData }) {
     }
 
     addUiText(text, x, y, size, color, options = {}) {
-      const label = this.add.text(x, y, truncate(text, options.maxChars), {
+      const label = this.add.text(Math.round(x), Math.round(y), truncate(text, options.maxChars), {
         align: options.align || "left",
         color,
         fontFamily: "Arial, sans-serif",
         fontSize: `${size}px`,
-        fontStyle: options.fontStyle || "700"
+        fontStyle: options.fontStyle || "700",
+        resolution: textResolution
       });
       label.setOrigin(options.originX || 0, options.originY || 0);
       (options.parent || this.uiLayer).add(label);
@@ -679,7 +717,8 @@ export function createJetlagScene({ actions, getData }) {
           color: textColor.ink,
           fontFamily: "Arial, sans-serif",
           fontSize: "18px",
-          fontStyle: "900"
+          fontStyle: "900",
+          resolution: textResolution
         })
         .setOrigin(0.5)
         .setShadow(0, 2, "#ffffff", 2, true, true);
